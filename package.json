@@ -11,6 +11,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "private": true,
   "dependencies": {
     "@google/genai": "^2.8.0",
     "@line/bot-sdk": "^11.0.1",
