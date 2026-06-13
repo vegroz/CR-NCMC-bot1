@@ -1,19 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import * as crypto from "crypto";
+import { validateSignature } from "@line/bot-sdk";
 import { getFaq } from "@/lib/sheet";
 import { askGemini } from "@/lib/gemini";
 
+export const runtime = "nodejs";
+
 const DEFAULT_REPLY =
   "ขออภัยครับ ขณะนี้ยังไม่มีข้อมูลในส่วนนี้ กรุณาติดต่อ ศอ.ปส.จ.เชียงราย โทร. 0 5315 0210 โดยตรงครับ";
-
-function verifySignature(body: string, signature: string): boolean {
-  const secret = process.env.LINE_CHANNEL_SECRET ?? "";
-  const hash = crypto
-    .createHmac("SHA256", secret)
-    .update(body)
-    .digest("base64");
-  return hash === signature;
-}
 
 async function replyToLine(replyToken: string, text: string): Promise<void> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
@@ -38,8 +31,16 @@ async function replyToLine(replyToken: string, text: string): Promise<void> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const rawBody = await req.text();
   const signature = req.headers.get("x-line-signature") ?? "";
+  const secret = process.env.LINE_CHANNEL_SECRET ?? "";
 
-  if (!verifySignature(rawBody, signature)) {
+  console.log("[webhook] secret length:", secret.length, "| sig:", signature.slice(0, 10) + "...");
+
+  if (!secret) {
+    console.error("[webhook] LINE_CHANNEL_SECRET is not set");
+    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+  }
+
+  if (!validateSignature(rawBody, secret, signature)) {
     console.warn("[webhook] Invalid signature");
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
@@ -59,7 +60,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     console.log("[webhook] Received:", userMessage);
 
-    // Process async but must finish before Vercel function times out (10s)
     try {
       const faq = await getFaq();
       const reply = await askGemini(faq, userMessage);
