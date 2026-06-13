@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateSignature } from "@line/bot-sdk";
 import { getFaq } from "@/lib/sheet";
-import { askGemini } from "@/lib/gemini";
+import { askGemini, DEFAULT_REPLY } from "@/lib/gemini";
+import { logConversation } from "@/lib/logger";
 
 export const runtime = "nodejs";
-
-const DEFAULT_REPLY =
-  "ขออภัยครับ ขณะนี้ยังไม่มีข้อมูลในส่วนนี้ กรุณาติดต่อ ศอ.ปส.จ.เชียงราย โทร. 0 5315 0210 โดยตรงครับ";
 
 async function replyToLine(replyToken: string, text: string): Promise<void> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
@@ -32,8 +30,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const rawBody = await req.text();
   const signature = req.headers.get("x-line-signature") ?? "";
   const secret = process.env.LINE_CHANNEL_SECRET ?? "";
-
-  console.log("[webhook] secret length:", secret.length, "| sig:", signature.slice(0, 10) + "...");
 
   if (!secret) {
     console.error("[webhook] LINE_CHANNEL_SECRET is not set");
@@ -62,8 +58,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     try {
       const faq = await getFaq();
-      const reply = await askGemini(faq, userMessage);
-      await replyToLine(replyToken, reply);
+      const result = await askGemini(faq, userMessage);
+      await replyToLine(replyToken, result.text);
+      await logConversation({
+        question: userMessage,
+        answer: result.text,
+        finishReason: result.finishReason,
+        thinkingTokens: result.thinkingTokens,
+        outputTokens: result.outputTokens,
+      });
     } catch (err) {
       console.error("[webhook] Unhandled error:", err);
       await replyToLine(replyToken, DEFAULT_REPLY).catch(() => {});

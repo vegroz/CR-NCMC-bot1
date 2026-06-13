@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const DEFAULT_REPLY =
+export const DEFAULT_REPLY =
   "ขออภัยครับ ขณะนี้ยังไม่มีข้อมูลในส่วนนี้ กรุณาติดต่อ ศอ.ปส.จ.เชียงราย โทร. 0 5315 0210 โดยตรงครับ";
 
 const SYSTEM_PROMPT = `<role>คุณคือเจ้าหน้าที่ของศูนย์อำนวยการป้องกันและปราบปรามยาเสพติดจังหวัดเชียงราย (ศอ.ปส.จ.เชียงราย)</role>
@@ -13,15 +13,21 @@ const SYSTEM_PROMPT = `<role>คุณคือเจ้าหน้าที่
 </constraints>
 <output_format>ภาษาไทย ไม่ใช้ markdown</output_format>`;
 
-export async function askGemini(faq: string, userMessage: string): Promise<string> {
+export interface GeminiResult {
+  text: string;
+  finishReason: string;
+  thinkingTokens: number;
+  outputTokens: number;
+}
+
+export async function askGemini(faq: string, userMessage: string): Promise<GeminiResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.error("[gemini] GEMINI_API_KEY is not set");
-    return DEFAULT_REPLY;
+    return { text: DEFAULT_REPLY, finishReason: "ERROR", thinkingTokens: 0, outputTokens: 0 };
   }
 
   const ai = new GoogleGenAI({ apiKey });
-
   const prompt = `${SYSTEM_PROMPT}\n<faq>\n${faq}\n</faq>\n<question>${userMessage}</question>`;
 
   try {
@@ -35,26 +41,26 @@ export async function askGemini(faq: string, userMessage: string): Promise<strin
     });
 
     const candidate = response.candidates?.[0];
-    const finishReason = candidate?.finishReason;
-    const thoughtsTokenCount = response.usageMetadata?.thoughtsTokenCount ?? 0;
-    const candidatesTokenCount = response.usageMetadata?.candidatesTokenCount ?? 0;
+    const finishReason = candidate?.finishReason ?? "UNKNOWN";
+    const thinkingTokens = response.usageMetadata?.thoughtsTokenCount ?? 0;
+    const outputTokens = response.usageMetadata?.candidatesTokenCount ?? 0;
 
-    console.log("[gemini]", { finishReason, thoughtsTokenCount, candidatesTokenCount });
+    console.log("[gemini]", { finishReason, thinkingTokens, outputTokens });
 
     if (finishReason === "MAX_TOKENS") {
       console.warn("[gemini] MAX_TOKENS reached, returning default reply");
-      return DEFAULT_REPLY;
+      return { text: DEFAULT_REPLY, finishReason, thinkingTokens, outputTokens };
     }
 
     const text = candidate?.content?.parts?.[0]?.text?.trim();
     if (!text) {
       console.warn("[gemini] Empty response text, returning default reply");
-      return DEFAULT_REPLY;
+      return { text: DEFAULT_REPLY, finishReason: "EMPTY", thinkingTokens, outputTokens };
     }
 
-    return text;
+    return { text, finishReason, thinkingTokens, outputTokens };
   } catch (err) {
     console.error("[gemini] Error calling Gemini:", err);
-    return DEFAULT_REPLY;
+    return { text: DEFAULT_REPLY, finishReason: "ERROR", thinkingTokens: 0, outputTokens: 0 };
   }
 }
