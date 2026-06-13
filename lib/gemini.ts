@@ -26,7 +26,7 @@ export async function askGemini(faq: string, userMessage: string): Promise<strin
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-flash-lite",
       contents: prompt,
       config: {
         temperature: 1.0,
